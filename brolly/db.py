@@ -171,7 +171,9 @@ class PostgresVoteStore(VoteStore):
             url,
             min_size=min_size,
             max_size=max_size,
-            kwargs={"autocommit": True, "row_factory": dict_row},
+            # prepare_threshold=None: no server-side prepared statements, so
+            # Neon's pooled (-pooler, PgBouncer) URL works as well as the direct one.
+            kwargs={"autocommit": True, "row_factory": dict_row, "prepare_threshold": None},
             check=ConnectionPool.check_connection,
             open=True,
         )
