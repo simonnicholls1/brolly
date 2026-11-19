@@ -10,12 +10,13 @@ from pathlib import Path
 from typing import Callable
 
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import verdict as v
-from .db import VoteStore
+from .db import VoteStore, open_store
 from .weather import OpenMeteo, local_date
 
 log = logging.getLogger("brolly")
@@ -42,7 +43,7 @@ def create_app(
     weather=None,
     clock: Callable[[], float] = time.time,
 ) -> FastAPI:
-    store = store or VoteStore(os.environ.get("DATABASE_PATH", "data/brolly.db"))
+    store = store or open_store()
     weather = weather or OpenMeteo()
     salt = os.environ.get("IP_SALT", "brolly")
 
@@ -52,6 +53,10 @@ def create_app(
         fwd = request.headers.get("x-forwarded-for", "")
         ip = fwd.split(",")[0].strip() or (request.client.host if request.client else "unknown")
         return hashlib.sha256(f"{salt}:{ip}".encode()).hexdigest()[:24]
+
+    async def db(fn, *args, **kwargs):
+        # Database calls block; keep them off the event loop.
+        return await run_in_threadpool(fn, *args, **kwargs)
 
     async def safe(coro, what: str):
         try:
@@ -68,9 +73,10 @@ def create_app(
         w = await safe(weather.current(lat, lon), "weather")
         climate = await safe(weather.climate(lat, lon, local_date(w, now)), "climate")
 
-        live = store.live_votes(lat, lon, v.LIVE_RADIUS_KM, since=now - v.VOTE_WINDOW_S)
+        live = await db(store.live_votes, lat, lon, v.LIVE_RADIUS_KM, since=now - v.VOTE_WINDOW_S)
         similar = (
-            store.similar_votes(
+            await db(
+                store.similar_votes,
                 lat, lon, v.SIMILAR_RADIUS_KM, w["feels_like"], v.SIMILAR_FEELS_TOLERANCE_C,
                 v.is_wet(w), before=now - v.VOTE_WINDOW_S, after=now - SIMILAR_LOOKBACK_S,
             )
@@ -127,17 +133,19 @@ def create_app(
         }
 
         # One live vote per person: voting again within 2h changes your answer.
-        existing = store.recent_vote_by_client(body.client_id, since=now - v.VOTE_WINDOW_S)
+        existing = await db(store.recent_vote_by_client, body.client_id, since=now - v.VOTE_WINDOW_S)
         if existing:
-            store.update_vote(
+            await db(
+                store.update_vote,
                 existing["id"], needed=int(body.needed), lat=lat, lon=lon, created_at=now, **snapshot
             )
             return {"ok": True, "updated": True}
 
-        if store.count_by_ip(iph, since=now - 3600) >= MAX_VOTES_PER_IP_PER_HOUR:
+        if await db(store.count_by_ip, iph, since=now - 3600) >= MAX_VOTES_PER_IP_PER_HOUR:
             raise HTTPException(429, "Too many votes from your network. Try again later.")
 
-        store.add_vote(
+        await db(
+            store.add_vote,
             created_at=now, lat=lat, lon=lon, needed=int(body.needed),
             client_id=body.client_id, ip_hash=iph, **snapshot,
         )

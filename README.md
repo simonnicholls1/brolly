@@ -34,13 +34,23 @@ Tests (they don't need network access, because the weather is faked):
 
 ```bash
 pytest
+# also run the API tests against Postgres:
+docker run -d --rm -e POSTGRES_PASSWORD=test -p 55432:5432 postgres:16-alpine
+TEST_DATABASE_URL=postgresql://postgres:test@localhost:55432/postgres pytest
+```
+
+Moving existing votes from SQLite to Postgres (it refuses to run if the target already has votes):
+
+```bash
+python -m brolly.migrate data/brolly.db "$DATABASE_URL"
 ```
 
 ### Config
 
 | Env var | Default | |
 |---|---|---|
-| `DATABASE_PATH` | `data/brolly.db` | SQLite file, created on first run |
+| `DATABASE_URL` | – | Postgres connection string (`postgresql://…?sslmode=require`). **Use this in production.** |
+| `DATABASE_PATH` | `data/brolly.db` | SQLite file, used when `DATABASE_URL` isn't set (local dev) |
 | `IP_SALT` | `brolly` | Salt for hashing IPs (used for rate limiting). **Set this in production.** |
 
 ### Docker

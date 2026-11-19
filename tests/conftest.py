@@ -2,7 +2,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from brolly.app import create_app
-from brolly.db import VoteStore
+import os
+
+from brolly.db import PostgresVoteStore, SqliteVoteStore
 
 
 class FakeWeather:
@@ -37,9 +39,22 @@ class Clock:
         return self.t
 
 
+BACKENDS = ["sqlite"] + (["postgres"] if os.environ.get("TEST_DATABASE_URL") else [])
+
+
+@pytest.fixture(params=BACKENDS)
+def store(request):
+    if request.param == "postgres":
+        s = PostgresVoteStore(os.environ["TEST_DATABASE_URL"])
+        s._execute("TRUNCATE votes RESTART IDENTITY", [])
+    else:
+        s = SqliteVoteStore(":memory:")
+    yield s
+    s.close()
+
+
 @pytest.fixture
-def env():
-    store = VoteStore(":memory:")
+def env(store):
     weather = FakeWeather()
     clock = Clock()
     client = TestClient(create_app(store=store, weather=weather, clock=clock))

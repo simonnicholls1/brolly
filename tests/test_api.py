@@ -67,7 +67,7 @@ def test_ip_rate_limit(env):
 def test_vote_stores_weather_snapshot(env):
     client, store, *_ = env
     vote(client, True)
-    row = store._conn.execute("SELECT * FROM votes").fetchone()
+    row = store.all_votes()[0]
     assert row["feels_like"] == 6.0 and row["wet"] == 0
     assert row["lat"] == 51.5 and row["lon"] == -0.12
 
