@@ -52,6 +52,21 @@ docker run -p 8000:8000 -v brolly-data:/data -e IP_SALT=change-me brolly
 
 Put the SQLite file on a persistent disk/volume (Fly.io volume, Render disk, Railway volume, etc.).
 
+### Deploying to Fly.io
+
+```bash
+# one-off setup (install flyctl: https://fly.io/docs/flyctl/install/)
+fly auth login
+fly launch --copy-config --no-deploy        # pick a unique app name when asked
+fly volumes create brolly_data --size 1     # same region as primary_region in fly.toml
+fly secrets set IP_SALT=$(openssl rand -hex 16)
+
+# every deploy
+fly deploy
+```
+
+Keep it to **one machine**. SQLite lives on a single volume, so don't scale out with `fly scale count`.
+
 ## API
 
 - `GET /api/verdict?lat=..&lon=..` returns the answer, probability, per-signal breakdown, recent nearby votes, current weather and climate
