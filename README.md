@@ -78,6 +78,16 @@ fly deploy
 
 Votes live in Postgres, so the machine itself is stateless and safe to scale or replace.
 
+## CI/CD
+
+`.github/workflows/ci-cd.yml` runs on every push and PR:
+
+1. **test** runs `pytest` against SQLite and a Postgres service container, then builds the Docker image and checks `/healthz`.
+2. **deploy** (pushes to `main` only, after tests pass) runs `flyctl deploy --remote-only`, then smoke-tests https://needacoat.com.
+
+It needs one repo secret, `FLY_API_TOKEN`: an app-scoped deploy token, made in the Fly dashboard (ancient-pine-6068 → Tokens) or with `fly tokens create deploy -a ancient-pine-6068`.
+Dependabot (`.github/dependabot.yml`) opens weekly PRs for pip, Docker and Actions updates.
+
 ## API
 
 - `GET /api/verdict?lat=..&lon=..` returns the answer, probability, per-signal breakdown, recent nearby votes, current weather and climate
