@@ -84,6 +84,13 @@ Votes live in Postgres, so the machine itself is stateless and safe to scale or 
 - `POST /api/vote` `{lat, lon, needed, client_id}` records a vote. Voting again within 2 h changes your vote rather than adding another. Each IP is limited to 10 new votes an hour.
 - `GET /api/geocode?q=..` searches for a place (used when location isn't available)
 
+## Security
+
+- The client IP comes from `Fly-Client-IP` (set by Fly's edge). `X-Forwarded-For` is never trusted.
+- Per-IP limits: 60/min on `/api/verdict`, 20/min on `/api/geocode`, 30/min on `/api/vote`, plus 10 new votes/hour.
+- Strict CSP, HSTS, `X-Frame-Options: DENY`, `nosniff`, a tight `Permissions-Policy`. No public `/docs`.
+- The container runs as a non-root user.
+
 ## Privacy
 
-Locations are rounded to 2 decimal places (~1 km) before they reach the database. IPs are only stored as salted hashes. The client ID is a random UUID kept in the browser's localStorage.
+Locations are rounded to 2 decimal places (~1 km) before they reach the database. IPs are only stored as salted hashes. The client ID is a random UUID kept in the browser's localStorage. Votes older than a year are deleted automatically.

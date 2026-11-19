@@ -129,6 +129,12 @@ class VoteStore:
         sets = ", ".join(f"{k} = ?" for k in v)
         self._execute(f"UPDATE votes SET {sets} WHERE id = ?", [*v.values(), vote_id])
 
+    def delete_older_than(self, cutoff: float) -> int:
+        n = self._query("SELECT COUNT(*) AS n FROM votes WHERE created_at < ?", [cutoff])[0]["n"]
+        if n:
+            self._execute("DELETE FROM votes WHERE created_at < ?", [cutoff])
+        return int(n)
+
     def all_votes(self) -> list[dict]:
         return self._query("SELECT * FROM votes ORDER BY id", [])
 

@@ -7,7 +7,7 @@ def vote(client, needed, cid=CID, lat=51.5, lon=-0.12, ip="1.1.1.1"):
     return client.post(
         "/api/vote",
         json={"lat": lat, "lon": lon, "needed": needed, "client_id": cid},
-        headers={"x-forwarded-for": ip},
+        headers={"fly-client-ip": ip},
     )
 
 
@@ -119,3 +119,54 @@ def test_canonical_host_redirects(monkeypatch, store):
     assert client.get("/", headers={"host": "needacoat.com"}).status_code == 200
     assert client.get("/", headers={"host": "localhost:8000"}).status_code == 200
     assert client.get("/healthz", headers={"host": "x.fly.dev"}).status_code == 200
+
+
+def test_spoofed_forwarded_for_does_not_bypass_vote_limit(env):
+    client, *_ = env
+    for i in range(10):
+        r = client.post(
+            "/api/vote",
+            json={"lat": 51.5, "lon": -0.12, "needed": True, "client_id": f"spoof-client-{i}"},
+            headers={"fly-client-ip": "9.9.9.9", "x-forwarded-for": f"10.0.0.{i}"},
+        )
+        assert r.status_code == 200
+    r = client.post(
+        "/api/vote",
+        json={"lat": 51.5, "lon": -0.12, "needed": True, "client_id": "spoof-client-x"},
+        headers={"fly-client-ip": "9.9.9.9", "x-forwarded-for": "10.0.0.99"},
+    )
+    assert r.status_code == 429
+
+
+def test_request_rate_limit_per_ip(env):
+    client, _, _, clock = env
+    h = {"fly-client-ip": "5.5.5.5"}
+    for _ in range(20):
+        assert client.get("/api/geocode", params={"q": "Lon"}, headers=h).status_code == 200
+    assert client.get("/api/geocode", params={"q": "Lon"}, headers=h).status_code == 429
+    # another IP is unaffected, and the window slides
+    assert client.get("/api/geocode", params={"q": "Lon"}, headers={"fly-client-ip": "6.6.6.6"}).status_code == 200
+    clock.t += 61
+    assert client.get("/api/geocode", params={"q": "Lon"}, headers=h).status_code == 200
+
+
+def test_security_headers_and_no_docs(env):
+    client, *_ = env
+    r = client.get("/")
+    assert "default-src 'self'" in r.headers["content-security-policy"]
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert r.headers["x-frame-options"] == "DENY"
+    assert "max-age" in r.headers["strict-transport-security"]
+    for path in ("/docs", "/redoc", "/openapi.json"):
+        assert client.get(path).status_code == 404
+
+
+def test_old_votes_are_pruned(env):
+    from brolly.app import RETENTION_S
+
+    client, store, _, clock = env
+    vote(client, True, cid="old-client-0001")
+    clock.t += RETENTION_S + 3 * 3600
+    vote(client, False, cid="new-client-0001")
+    rows = store.all_votes()
+    assert [r["client_id"] for r in rows] == ["new-client-0001"]

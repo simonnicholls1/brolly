@@ -6,12 +6,13 @@ import hashlib
 import logging
 import os
 import time
+from collections import defaultdict, deque
 from pathlib import Path
 from typing import Callable
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -23,7 +24,51 @@ log = logging.getLogger("brolly")
 
 PUBLIC_DIR = Path(__file__).resolve().parent.parent / "public"
 SIMILAR_LOOKBACK_S = 365 * 24 * 60 * 60
+RETENTION_S = SIMILAR_LOOKBACK_S  # votes older than this are never used, so delete them
+PRUNE_EVERY_S = 60 * 60
 MAX_VOTES_PER_IP_PER_HOUR = 10
+# Per-IP request limits (requests, window seconds) for endpoints that call Open-Meteo.
+RATE_LIMITS = {"/api/verdict": (60, 60), "/api/geocode": (20, 60), "/api/vote": (30, 60)}
+
+SECURITY_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+        "connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; "
+        "form-action 'self'; frame-ancestors 'none'"
+    ),
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "geolocation=(self), camera=(), microphone=(), payment=()",
+    "Cross-Origin-Opener-Policy": "same-origin",
+}
+
+
+class RateLimiter:
+    """In-memory sliding window. Fine for a single machine."""
+
+    def __init__(self, clock: Callable[[], float]):
+        self.clock = clock
+        self.hits: dict[tuple[str, str], deque] = defaultdict(deque)
+
+    def allow(self, key: str, bucket: str, limit: int, window: float) -> bool:
+        now = self.clock()
+        q = self.hits[(bucket, key)]
+        while q and q[0] <= now - window:
+            q.popleft()
+        if len(q) >= limit:
+            return False
+        q.append(now)
+        if len(self.hits) > 50_000:  # crude memory cap
+            self.hits.clear()
+        return True
+
+
+def client_ip(request: Request) -> str:
+    # Fly's edge sets Fly-Client-IP and clients can't override it. X-Forwarded-For
+    # is NOT trusted: its first entry is whatever the client sent.
+    return request.headers.get("fly-client-ip") or (request.client.host if request.client else "unknown")
 
 
 class VoteIn(BaseModel):
@@ -47,7 +92,10 @@ def create_app(
     weather = weather or OpenMeteo()
     salt = os.environ.get("IP_SALT", "brolly")
 
-    app = FastAPI(title="Do I need a coat?")
+    # No public /docs, /redoc or /openapi.json.
+    app = FastAPI(title="Do I need a coat?", docs_url=None, redoc_url=None, openapi_url=None)
+    limiter = RateLimiter(clock)
+    last_prune = [0.0]
 
     canonical = os.environ.get("CANONICAL_HOST", "").strip().lower()
 
@@ -68,10 +116,33 @@ def create_app(
             return RedirectResponse(target, status_code=301)
         return await call_next(request)
 
+    @app.middleware("http")
+    async def rate_limit(request: Request, call_next):
+        rule = RATE_LIMITS.get(request.url.path)
+        if rule and not limiter.allow(client_ip(request), request.url.path, *rule):
+            return JSONResponse({"detail": "Slow down a bit and try again in a minute."}, 429)
+        return await call_next(request)
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        for k, val in SECURITY_HEADERS.items():
+            response.headers.setdefault(k, val)
+        return response
+
     def ip_hash(request: Request) -> str:
-        fwd = request.headers.get("x-forwarded-for", "")
-        ip = fwd.split(",")[0].strip() or (request.client.host if request.client else "unknown")
-        return hashlib.sha256(f"{salt}:{ip}".encode()).hexdigest()[:24]
+        return hashlib.sha256(f"{salt}:{client_ip(request)}".encode()).hexdigest()[:24]
+
+    async def maybe_prune(now: float):
+        if now - last_prune[0] < PRUNE_EVERY_S:
+            return
+        last_prune[0] = now
+        try:
+            n = await db(store.delete_older_than, now - RETENTION_S)
+            if n:
+                log.info("pruned %d votes older than retention", n)
+        except Exception as e:
+            log.warning("prune failed: %s", e)
 
     async def db(fn, *args, **kwargs):
         # Database calls block; keep them off the event loop.
@@ -142,6 +213,7 @@ def create_app(
         now = clock()
         lat, lon = _round_loc(body.lat, body.lon)
         iph = ip_hash(request)
+        await maybe_prune(now)
 
         w = await safe(weather.current(lat, lon), "weather")
         snapshot = {
