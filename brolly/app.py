@@ -11,7 +11,7 @@ from typing import Callable
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -48,6 +48,25 @@ def create_app(
     salt = os.environ.get("IP_SALT", "brolly")
 
     app = FastAPI(title="Do I need a coat?")
+
+    canonical = os.environ.get("CANONICAL_HOST", "").strip().lower()
+
+    @app.middleware("http")
+    async def canonical_host(request: Request, call_next):
+        # Send www.<domain> and *.fly.dev visitors to the one real domain.
+        # Other hosts (localhost, internal checks) are left alone.
+        host = request.headers.get("host", "").split(":")[0].lower()
+        if (
+            canonical
+            and host != canonical
+            and (host == f"www.{canonical}" or host.endswith(".fly.dev"))
+            and request.url.path != "/healthz"
+        ):
+            target = f"https://{canonical}{request.url.path}"
+            if request.url.query:
+                target += f"?{request.url.query}"
+            return RedirectResponse(target, status_code=301)
+        return await call_next(request)
 
     def ip_hash(request: Request) -> str:
         fwd = request.headers.get("x-forwarded-for", "")

@@ -7,6 +7,7 @@ primary_region = "lhr"
 
 [env]
   DATABASE_PATH = "/data/brolly.db"
+  CANONICAL_HOST = "needacoat.com"
 
 [mounts]
   source = "brolly_data"

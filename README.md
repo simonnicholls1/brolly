@@ -51,6 +51,7 @@ python -m brolly.migrate data/brolly.db "$DATABASE_URL"
 |---|---|---|
 | `DATABASE_URL` | – | Postgres connection string (`postgresql://…?sslmode=require`). **Use this in production.** |
 | `DATABASE_PATH` | `data/brolly.db` | SQLite file, used when `DATABASE_URL` isn't set (local dev) |
+| `CANONICAL_HOST` | – | e.g. `needacoat.com`. Requests to `www.` or `*.fly.dev` get a 301 redirect there |
 | `IP_SALT` | `brolly` | Salt for hashing IPs (used for rate limiting). **Set this in production.** |
 
 ### Docker

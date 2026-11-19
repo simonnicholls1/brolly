@@ -98,3 +98,24 @@ def test_static_and_geocode(env):
     assert "Do I need a coat?" in client.get("/").text
     assert client.get("/app.js").status_code == 200
     assert client.get("/api/geocode", params={"q": "Lon"}).json()["results"][0]["name"] == "London"
+
+
+def test_canonical_host_redirects(monkeypatch, store):
+    from fastapi.testclient import TestClient
+
+    from brolly.app import create_app
+    from conftest import FakeWeather
+
+    monkeypatch.setenv("CANONICAL_HOST", "needacoat.com")
+    client = TestClient(create_app(store=store, weather=FakeWeather()), follow_redirects=False)
+
+    r = client.get("/api/verdict?lat=1&lon=2", headers={"host": "www.needacoat.com"})
+    assert r.status_code == 301
+    assert r.headers["location"] == "https://needacoat.com/api/verdict?lat=1&lon=2"
+
+    r = client.get("/", headers={"host": "ancient-pine-6068.fly.dev"})
+    assert r.status_code == 301 and r.headers["location"] == "https://needacoat.com/"
+
+    assert client.get("/", headers={"host": "needacoat.com"}).status_code == 200
+    assert client.get("/", headers={"host": "localhost:8000"}).status_code == 200
+    assert client.get("/healthz", headers={"host": "x.fly.dev"}).status_code == 200
