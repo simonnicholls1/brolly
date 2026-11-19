@@ -1,6 +1,6 @@
 # Fly.io config. Run `fly launch --copy-config --no-deploy` to claim an app name,
 # then follow the steps in the README.
-app = "brolly"
+app = "ancient-pine-6068"
 primary_region = "lhr"
 
 [build]
