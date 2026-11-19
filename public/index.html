@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Do I need a coat?</title>
+  <meta name="description" content="Crowd-sourced, weather-backed answer to whether you need a coat right now, right where you are.">
+  <meta name="theme-color" content="#1d2b3a">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧥</text></svg>">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body data-sky="loading">
+  <div class="sky" aria-hidden="true">
+    <div class="sun"></div>
+    <div class="cloud c1"></div><div class="cloud c2"></div><div class="cloud c3"></div>
+    <div class="fog"></div>
+    <div class="flash"></div>
+    <canvas id="particles"></canvas>
+  </div>
+
+  <main>
+    <header>
+      <h1>Do I need a coat?</h1>
+    </header>
+
+    <section class="hero" aria-live="polite">
+      <p class="answer" id="answer">…</p>
+      <p class="headline" id="headline">Finding where you are</p>
+      <p class="where" id="where"></p>
+    </section>
+
+    <section class="card search" id="search" hidden>
+      <p id="search-reason">We couldn't get your location. Search for a place instead.</p>
+      <form id="search-form" autocomplete="off">
+        <input id="search-input" type="search" placeholder="Town or city" aria-label="Town or city" required minlength="2">
+        <button type="submit">Search</button>
+      </form>
+      <ul id="search-results"></ul>
+      <button class="link" id="retry-geo" type="button">Try my location again</button>
+    </section>
+
+    <section class="card vote" id="vote" hidden>
+      <h2>Been outside? Help the next person</h2>
+      <p class="muted" id="vote-status">Did you need a coat?</p>
+      <div class="vote-buttons">
+        <button type="button" data-needed="true">🧥 Yes, needed one</button>
+        <button type="button" data-needed="false">👕 No, fine without</button>
+      </div>
+    </section>
+
+    <section class="card stats" id="stats" hidden>
+      <h2>How we worked it out</h2>
+
+      <div class="meter" aria-hidden="true">
+        <div class="meter-track"><div class="meter-fill" id="meter-fill"></div><div class="meter-mid"></div></div>
+        <div class="meter-labels"><span>No coat</span><span id="meter-pct"></span><span>Coat</span></div>
+      </div>
+
+      <ul class="signals" id="signals"></ul>
+
+      <h3>Votes near you <span class="muted" id="live-sub"></span></h3>
+      <div class="timeline" id="timeline">
+        <div class="timeline-axis"><span>2h ago</span><span>1h ago</span><span>now</span></div>
+      </div>
+      <p class="muted small" id="live-note"></p>
+
+      <h3>Weather right now</h3>
+      <dl class="grid" id="weather-grid"></dl>
+
+      <h3>Usually on this date</h3>
+      <p class="muted" id="climate-text"></p>
+    </section>
+
+    <footer>
+      <p>Votes expire after 2 hours. Locations are rounded to about 1&nbsp;km.
+        Weather by <a href="https://open-meteo.com/" rel="noopener">Open-Meteo</a>.</p>
+      <button class="link" id="change-place" type="button" hidden>Change place</button>
+    </footer>
+  </main>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>
