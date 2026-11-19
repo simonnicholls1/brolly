@@ -69,14 +69,14 @@ Put the SQLite file on a persistent disk/volume (Fly.io volume, Render disk, Rai
 # one-off setup (install flyctl: https://fly.io/docs/flyctl/install/)
 fly auth login
 fly launch --copy-config --no-deploy        # pick a unique app name when asked
-fly volumes create brolly_data --size 1     # same region as primary_region in fly.toml
 fly secrets set IP_SALT=$(openssl rand -hex 16)
+fly secrets set DATABASE_URL='postgresql://…'   # Neon (or any Postgres)
 
 # every deploy
 fly deploy
 ```
 
-Keep it to **one machine**. SQLite lives on a single volume, so don't scale out with `fly scale count`.
+Votes live in Postgres, so the machine itself is stateless and safe to scale or replace.
 
 ## API
 

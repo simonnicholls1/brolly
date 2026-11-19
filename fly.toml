@@ -1,17 +1,12 @@
-# Fly.io config. Run `fly launch --copy-config --no-deploy` to claim an app name,
-# then follow the steps in the README.
+# Fly.io config. Votes live in Postgres (Neon) via the DATABASE_URL secret,
+# so there is no volume. See the README for deploy steps.
 app = "ancient-pine-6068"
 primary_region = "lhr"
 
 [build]
 
 [env]
-  DATABASE_PATH = "/data/brolly.db"
   CANONICAL_HOST = "needacoat.com"
-
-[mounts]
-  source = "brolly_data"
-  destination = "/data"
 
 [http_service]
   internal_port = 8000
